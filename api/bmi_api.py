@@ -9,7 +9,7 @@ def hello(name: str):
 @app.get("/bmi")
 def bmi(height: float = Query(gt=0), weight: float = Query(gt=0)):
     value = weight / (height ** 2)
-    # ← 这里用 if/elif 写评价
+
     if value < 18.5:
         evaluate = "偏瘦"
     elif value < 24:  # 走到这里,必然已经 ≥18.5
