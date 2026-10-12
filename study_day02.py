@@ -1,7 +1,4 @@
 import random
-from gettext import find
-from itertools import count
-from os import remove
 
 
 def gassnuber():
