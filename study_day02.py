@@ -24,9 +24,9 @@ def chengfa():
 def Contacts():
     # 存:把整个 accounts 塞进文件
     contacts = []  # 空通讯录(列表)
-    found = False
 
     while True:
+        found = False  # 每轮先归零:上一轮找到过,不代表这一轮也能找到
         print("\n1 添加  2 删除  3 查找  4 修改  5 退出")
         choice = input("请选择:")
 
