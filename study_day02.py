@@ -40,7 +40,9 @@ def Contacts():
             # 删除
 
             removename=input("你要删除谁")
-            for i in contacts:
+            # 遍历"副本"contacts[:]:遍历原列表时删元素,会让后面的人往前挪一位而被跳过。
+            # (当前代码删除后立刻 break,所以侥幸不会出错;去掉 break 想删重名时就会漏删。)
+            for i in contacts[:]:
                 if i["name"] == removename:
                     contacts.remove(i)
                     found=True
