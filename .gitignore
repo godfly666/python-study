@@ -5,3 +5,4 @@ __pycache__/
 .env
 notes.txt
 chroma_db*/
+blank_db/
