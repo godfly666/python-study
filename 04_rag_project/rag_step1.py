@@ -2,7 +2,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from study.api.deepseek_api import resp
+
 
 load_dotenv()
 
@@ -22,5 +22,6 @@ def embed(text: str):
 if __name__ == "__main__":
     vec = embed("AI Agent 是一种能自主感知环境、做出决策并采取行动的智能系统。")
     print("维度:", len(vec))
+
     print("前5个数字:", vec[:5])
     print("L2范数:", round(sum(x * x for x in vec) ** 0.5, 6))

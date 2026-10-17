@@ -4,4 +4,4 @@ __pycache__/
 *.db
 .env
 notes.txt
-chroma_db/
+chroma_db*/
