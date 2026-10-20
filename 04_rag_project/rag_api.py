@@ -1,4 +1,5 @@
 import os
+import hmac
 from fastapi import FastAPI, UploadFile, File, HTTPException
 import chromadb
 from dotenv import load_dotenv
@@ -22,6 +23,17 @@ ds = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"],
 RULES = """1. 只能根据我提供的【资料】回答，不许使用你自己的知识或常识补充。
 2. 如果【资料】里找不到答案，就只回答："该问题不在文库中"。
 3. 答案里不要写出处，也不要写"根据资料"之类的话，直接回答问题。"""
+
+# ---- 演示口令:公网暴露时必须加,否则谁拿到链接都能传文件、刷我的余额 ----
+# 写在 .env 里(DEMO_KEY=...),不进代码;为空则等于不设防(只在本机调试时这样用)
+DEMO_KEY = os.environ.get("DEMO_KEY", "").strip()
+
+
+def check_key(k: str):
+    """比较口令。用 hmac.compare_digest:逐字符比较耗时恒定,不会被"按响应时间猜口令"攻击"""
+    if DEMO_KEY and not hmac.compare_digest(k, DEMO_KEY):
+        raise HTTPException(status_code=403, detail="口令不对:链接里要带 ?k=你的口令")
+
 
 db = chromadb.PersistentClient(path=os.path.join(BASE, "chroma_db_v3"))
 col = db.get_or_create_collection(name="my_docs_v2", metadata={"hnsw:space": "cosine"})
@@ -60,7 +72,8 @@ def split_text(text: str) -> list[str]:
     return [b for b in blocks if len(b) >= 20]        # 过滤太短的(分隔线/空块)
 
 @app.post("/upload")
-async def upload(file: UploadFile = File(...)):
+async def upload(file: UploadFile = File(...), k: str = ""):
+    check_key(k)
     # ① 先校验:不合法就别安排算力(别为一个 .png 花几十秒算 embedding)
     ALLOWED = (".md", ".txt")
     ext = os.path.splitext(file.filename)[1].lower()
@@ -94,7 +107,8 @@ class AskBody(BaseModel):               # 请求体的形状:{"q": "你的问题
     q: str
 
 @app.post("/ask")
-async def ask(body: AskBody):
+async def ask(body: AskBody, k: str = ""):
+    check_key(k)                     # 先验口令,再花算力
     res = col.query(query_embeddings=[embed(body.q)], n_results=3)
     docs, metas, dists = res["documents"][0], res["metadatas"][0], res["distances"][0]
 

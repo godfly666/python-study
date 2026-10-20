@@ -37,6 +37,11 @@
     const ansEl = document.getElementById("answer");
     const srcEl = document.getElementById("sources");
 
+    // 口令从链接里取:分享出去的链接就是 https://xxxx/?k=你的口令
+    // 陌生人拿到普通链接调用接口会收到 403
+    const K = new URLSearchParams(location.search).get("k") || "";
+    const withKey = url => K ? url + (url.includes("?") ? "&" : "?") + "k=" + encodeURIComponent(K) : url;
+
     function say(msg, warn) {
       ansEl.textContent = msg;
       ansEl.className = warn ? "warn" : "";
@@ -60,12 +65,13 @@
       const timer = setTimeout(() => ctrl.abort(), 60000);
 
       try {
-        const resp = await fetch("/ask", {
+        const resp = await fetch(withKey("/ask"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ q: q }),
           signal: ctrl.signal,
         });
+        if (resp.status === 403) throw new Error("口令不对 —— 链接末尾要带 ?k=你的口令");
         if (!resp.ok) throw new Error("HTTP " + resp.status);
 
         const data = await resp.json();
