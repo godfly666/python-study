@@ -3,7 +3,8 @@ from fastapi import FastAPI, UploadFile, File, HTTPException
 import chromadb
 from dotenv import load_dotenv
 from openai import OpenAI
-
+from fastapi.responses import FileResponse
+from pydantic import BaseModel          # 放在文件开头 import 区
 BASE = os.path.dirname(os.path.abspath(__file__))
 STUDY = r"C:\Users\l1809\PycharmProjects\WelcomeScreen\study"
 UPLOAD_DIR = os.path.join(BASE, "uploads")
@@ -12,6 +13,15 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)          # 不存在就建,存在也不�
 load_dotenv(os.path.join(STUDY, ".env"))         # 顺序!先读 .env 再取 key
 client = OpenAI(api_key=os.environ["ZHIPU_API_KEY"],
                 base_url="https://open.bigmodel.cn/api/paas/v4/")
+
+# 第二个客户端:DeepSeek,管"把人话说明白"(和智谱那个管"变数字"的不是一回事)
+ds = OpenAI(api_key=os.environ["DEEPSEEK_API_KEY"],
+            base_url="https://api.deepseek.com")
+
+# 给模型的规矩:注意第 3 条 —— 出处不再让模型写,由后端从检索结果里直接给
+RULES = """1. 只能根据我提供的【资料】回答，不许使用你自己的知识或常识补充。
+2. 如果【资料】里找不到答案，就只回答："该问题不在文库中"。
+3. 答案里不要写出处，也不要写"根据资料"之类的话，直接回答问题。"""
 
 db = chromadb.PersistentClient(path=os.path.join(BASE, "chroma_db_v3"))
 col = db.get_or_create_collection(name="my_docs_v2", metadata={"hnsw:space": "cosine"})
@@ -80,3 +90,43 @@ async def upload(file: UploadFile = File(...)):
         metadatas=metas,
     )
     return {"file": file.filename, "chunks": len(blocks)}
+class AskBody(BaseModel):               # 请求体的形状:{"q": "你的问题"}
+    q: str
+
+@app.post("/ask")
+async def ask(body: AskBody):
+    res = col.query(query_embeddings=[embed(body.q)], n_results=3)
+    docs, metas, dists = res["documents"][0], res["metadatas"][0], res["distances"][0]
+
+    # 一道很松的硬闸:第 1 名都远到这个程度,说明库里确实没有 → 连模型都不用调(省钱+不给它编的机会)
+    if not docs or dists[0] > 0.75:
+        return {"answer": "该问题不在文库中", "sources": []}
+
+    # 空①:把 3 段资料拼成一段文字,格式 [文件名 第N段]\n正文,块与块之间空一行
+    context = "\n\n".join(
+        f"[{m['source']} 第{m['para']}段]\n{d}" for d, m in zip(docs, metas)
+    )
+
+    # 空②:调 DeepSeek 拿答案(和 mini_agent/chat_v2 里一模一样的用法)
+    resp = ds.chat.completions.create(
+        model="deepseek-chat",
+        messages=[
+            {"role": "system", "content": RULES},
+            {"role": "user", "content": f"资料：\n{context}\n\n问题：{body.q}"},
+        ],
+    )
+    answer = resp.choices[0].message.content.strip()
+
+    sources = [{"source": m["source"], "para": m["para"], "distance": round(float(d), 4)}
+               for m, d in zip(metas, dists)]      # ← 出处由后端给,模型碰不到
+
+    # 模型说"没有"的时候,列出出处会自相矛盾(页面上一边说不在文库中,一边列 3 条来源)
+    if "不在文库中" in answer:
+        return {"answer": answer, "sources": []}
+    return {"answer": answer, "sources": sources}
+
+
+@app.get("/")
+def home():
+    """浏览器打开 http://127.0.0.1:8000/ 时,把这个 HTML 文件吐出去"""
+    return FileResponse(os.path.join(BASE, "static", "index.html"))
