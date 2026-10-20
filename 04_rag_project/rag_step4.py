@@ -23,21 +23,37 @@ docs, metas = [], []
 
 for path in FILES:
     text = open(path, encoding="utf-8").read()
-    for i, p in enumerate(text.split("\n\n")):
-        p = p.strip()
-        if len(p) < 20:          # 太短的是空行/分隔线,丢掉
-            continue
-        docs.append(p)
-        # 空①:这一段的"身份证"要存什么?后面才能回答"这句话出自哪个文件第几段"
-        #    提示:你需要文件名 + 段号 → 一个字典
-        #    文件名的写法:os.path.basename(path)
-        metas.append({"source": os.path.basename(path), "para": i})
+    raw = [x.strip() for x in text.split("\n\n")]
 
-print(f"共切成 {len(docs)} 段")
+    # 【改进版切分】标题段(# 开头)+ 紧随其后的正文段,合并成一块
+    # 为什么:标题和正文被切开时,模型手里只有一个孤立标题,
+    #        很容易把"相邻的另一天"的正文缝到这个标题底下(错误归因)
+    blocks, i = [], 0
+    while i < len(raw):
+        p = raw[i]
+        if not p:
+            i += 1
+            continue
+        nxt = raw[i + 1] if i + 1 < len(raw) else ""
+        if p.startswith("#") and nxt and not nxt.startswith("#"):
+            blocks.append(p + "\n\n" + nxt)       # 标题 + 正文 = 一块
+            i += 2
+        else:
+            blocks.append(p)                      # 其他照原样
+            i += 1
+
+    for b in blocks:
+        if len(b) < 20:                           # 太短的是分隔线/空块,丢掉
+            continue
+        docs.append(b)
+        # 身份证 = 文件名 + 段号(从 1 开始数,方便人肉核对第几段)
+        metas.append({"source": os.path.basename(path), "para": len(docs)})
+
+print(f"共切成 {len(docs)} 段(标题与正文已合并)")
 
 # ---------- 2. 入库(注意:换个库名,别覆盖 R3 的 kefu)----------
-db  = chromadb.PersistentClient(path="./chroma_db_v2")
-col = db.get_or_create_collection(name="my_docs", metadata={"hnsw:space": "cosine"})
+db  = chromadb.PersistentClient(path="./chroma_db_v3")
+col = db.get_or_create_collection(name="my_docs_v2", metadata={"hnsw:space": "cosine"})
 
 col.upsert(
     ids=[f"doc{i}" for i in range(len(docs))],
